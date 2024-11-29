@@ -24,11 +24,45 @@ SUGGESTED_MIME_TYPES = {
 }
 
 def verify_mimetype(epub: zipfile.ZipFile):
-    mimetype = epub.read('mimetype').decode('utf-8')
-    if mimetype != 'application/epub+zip':
-        raise ValueError('Invalid mimetype: ' + mimetype)
-    else:
-        logging.info('Valid mimetype: ' + mimetype)
+    namelist = epub.namelist()
+    if not namelist or namelist[0] != 'mimetype':
+        raise ValueError("The 'mimetype' file is not the first file in the ZIP archive.")
+    
+    file_info = epub.getinfo('mimetype')
+    
+    if file_info.compress_type != zipfile.ZIP_STORED:
+        raise ValueError("The 'mimetype' file is compressed. It must be stored uncompressed.")
+    
+    if file_info.extra:
+        raise ValueError("The 'mimetype' file contains extra fields in the ZIP header, which is not allowed.")
+    
+    if file_info.flag_bits & 0x1:
+        raise ValueError("The 'mimetype' file is encrypted, which is not allowed.")
+    
+    try:
+        mimetype = epub.read('mimetype').decode('ascii')
+    except UnicodeDecodeError:
+        raise ValueError("The 'mimetype' file is not properly encoded as ASCII.")
+    
+    with open(epub.filename, 'rb') as f:
+        f.seek(0)
+        magic_number = f.read(2)
+        if magic_number != b'PK':
+            raise ValueError("Invalid ZIP magic number. The file may not be a valid ZIP archive.")
+        
+        f.seek(30)
+        header_data = f.read(8)
+        if header_data != b'mimetype':
+            raise ValueError("The 'mimetype' file is not correctly located or formatted.")
+        
+        f.seek(38)
+        mimetype_data = f.read(len('application/epub+zip'))
+        if mimetype_data != b'application/epub+zip':
+            raise ValueError("The 'mimetype' file content is not correctly located or formatted.")
+    
+    logging.info("Mimetype file verification passed.")
+
+
 
 def parse_container(epub: zipfile.ZipFile):
     try:
